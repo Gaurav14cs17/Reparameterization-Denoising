@@ -37,10 +37,10 @@ Original Paper: [Lightweight network towards real-time image denoising on mobile
 - However, since inference on an **iPhone 11 NPU takes 14.2ms**, and considering personal needs, this implementation uses **single-channel grayscale images** as input.  
 - The model's channel structure was adjusted accordingly.  
 
-### **(3) Parameter Reinitialization**  
+### **(3) Reparameterization**  
 - The paper briefly mentions parameter reinitialization but does not provide detailed explanations.  
-- The report I referenced mentioned **ECB parameter reinitialization**, which differs from the original paper's method by only **0.02dB**.  
-- Thus, **ECB parameter reinitialization** was adopted in this implementation.
+- The report I referenced mentioned **ECB . Reparameterization**, which differs from the original paper's method by only **0.02dB**.  
+- Thus, **ECB. Reparameterization** was adopted in this implementation.
 -  ![Parameter Reinitialization](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_1.png )
   ### Paper:
   - [Fast and Memory-Efficient Network Towards Efficient Image Super-Resolution](https://arxiv.org/pdf/2204.08397)
