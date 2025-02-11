@@ -44,7 +44,9 @@ Some details in the paper were unclear, so certain parts of the implementation w
 ### **(3) Parameter Reinitialization**  
 - The paper briefly mentions parameter reinitialization but does not provide detailed explanations.  
 - The report I referenced mentioned **ECB parameter reinitialization**, which differs from the original paper's method by only **0.02dB**.  
-- Thus, **ECB parameter reinitialization** was adopted in this implementation.  
+- Thus, **ECB parameter reinitialization** was adopted in this implementation.
+-  ![Parameter Reinitialization](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_1.png )
+
 
 > **Reference:** Haar transform code was adapted from [MWCNNv2](https://github.com/lpj-github-io/MWCNNv2/blob/master/MWCNN_code/model/common.py).  
 
@@ -57,7 +59,8 @@ Some details in the paper were unclear, so certain parts of the implementation w
   - **RTX 3060 GPU:** **1ms**  
   - **NCNN on mobile devices:** Achieves real-time inference  
 
-- **Performance:** The model performs well in terms of both **speed and denoising quality**.  
+- **Performance:** The model performs well in terms of both **speed and denoising quality**.
+- ![Parameter Reinitialization](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_2.png )
 
 ---
 
