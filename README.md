@@ -46,9 +46,14 @@ Some details in the paper were unclear, so certain parts of the implementation w
 - The report I referenced mentioned **ECB parameter reinitialization**, which differs from the original paper's method by only **0.02dB**.  
 - Thus, **ECB parameter reinitialization** was adopted in this implementation.
 -  ![Parameter Reinitialization](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_1.png )
+  ### Paper:
+  - [Fast and Memory-Efficient Network Towards Efficient Image Super-Resolution](https://arxiv.org/pdf/2204.08397)
+  - [PlainUSR: Chasing Faster ConvNet for Efficient Super-Resolution](https://arxiv.org/html/2409.13435v1)
+  - [Edge-oriented Convolution Block for Real-time Super Resolution on Mobile Devices](https://www4.comp.polyu.edu.hk/~cslzhang/paper/MM21_ECBSR.pdf)
 
-
-> **Reference:** Haar transform code was adapted from [MWCNNv2](https://github.com/lpj-github-io/MWCNNv2/blob/master/MWCNN_code/model/common.py).  
+----
+> ### Model Reference:
+  > Haar transform code was adapted from [MWCNNv2](https://github.com/lpj-github-io/MWCNNv2/blob/master/MWCNN_code/model/common.py).  
 
 ---
 
