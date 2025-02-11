@@ -60,6 +60,5 @@ Original Paper: [Lightweight network towards real-time image denoising on mobile
 ---
 
 ### **Summary**  
-This repository provides an **unofficial implementation** of **MFDNet** with some adjustments for mobile deployment.  
 It delivers **efficient real-time denoising** while maintaining high performance.  
 
