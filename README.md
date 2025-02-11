@@ -1,4 +1,4 @@
-# **Unofficial Implementation of the Mobile Real-Time Denoising Network (MFDNet)**  
+# **Implementation of the Mobile Real-Time Denoising Network (MFDNet)**  
 
 Original Paper: [Lightweight network towards real-time image denoising on mobile devices](https://arxiv.org/abs/2211.04687)  
 
