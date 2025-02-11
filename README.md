@@ -27,10 +27,6 @@ Original Paper: [Lightweight network towards real-time image denoising on mobile
 
 ## **3. Notes on Implementation**  
 
-This project was completed some time ago, and I am now organizing and sharing it.  
-At the time of implementation, the original paper had not yet been officially published (it was only available on arXiv).  
-Some details in the paper were unclear, so certain parts of the implementation were based on educated guesses, including:  
-
 ### **(1) MFA Module Downsampling Method**  
 - The paper does not specify whether the MFA module uses **Haar wavelet transform** or **convolution** for downsampling.  
 - It also does not explain how the number of channels changes (only mentioning that the MFA width is **1/4 of the model**).  
