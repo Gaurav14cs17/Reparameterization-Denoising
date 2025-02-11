@@ -53,12 +53,6 @@ Some details in the paper were unclear, so certain parts of the implementation w
 ---
 
 ## **4. Conclusion**  
-
-- **Inference Speed:**  
-  - **CPU:** **9ms** (480×360 image)  
-  - **RTX 3060 GPU:** **1ms**  
-  - **NCNN on mobile devices:** Achieves real-time inference  
-
 - **Performance:** The model performs well in terms of both **speed and denoising quality**.
 - ![Parameter Reinitialization](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_2.png )
 
