@@ -47,6 +47,7 @@ Original Paper: [Lightweight network towards real-time image denoising on mobile
   - [PlainUSR: Chasing Faster ConvNet for Efficient Super-Resolution](https://arxiv.org/html/2409.13435v1)
   - [Edge-oriented Convolution Block for Real-time Super Resolution on Mobile Devices](https://www4.comp.polyu.edu.hk/~cslzhang/paper/MM21_ECBSR.pdf)
   - [awesome-reparameterize](https://github.com/pdh930105/awesome-reparameterize)
+  - [RepNeXt: A Fast Multi-Scale CNN using Structural Reparameterization](https://github.com/suous/RepNeXt)
 
 ----
 > ### Model Reference:
