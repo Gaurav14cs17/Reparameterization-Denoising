@@ -46,6 +46,7 @@ Original Paper: [Lightweight network towards real-time image denoising on mobile
   - [Fast and Memory-Efficient Network Towards Efficient Image Super-Resolution](https://arxiv.org/pdf/2204.08397)
   - [PlainUSR: Chasing Faster ConvNet for Efficient Super-Resolution](https://arxiv.org/html/2409.13435v1)
   - [Edge-oriented Convolution Block for Real-time Super Resolution on Mobile Devices](https://www4.comp.polyu.edu.hk/~cslzhang/paper/MM21_ECBSR.pdf)
+  - [awesome-reparameterize] (https://github.com/pdh930105/awesome-reparameterize)
 
 ----
 > ### Model Reference:
