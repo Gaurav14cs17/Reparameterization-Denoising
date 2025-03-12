@@ -1,156 +1,117 @@
-import os
-import cv2 as cv
 import torch
+from torch.utils.data import DataLoader
+from torchvision import transforms
+from PIL import Image
+import os
 import numpy as np
-import time
-from model.MFDNet import MFDNet
-from model.Plaindn import PlainDN
-from train import opt
-from utils.Rep_params import rep_params
+from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
 
 
-def set_device():
-    """Set up the computing device (GPU or CPU)."""
-    use_cuda = opt.cuda >= 0 and torch.cuda.is_available()
-    device = torch.device(f'cuda:{opt.cuda}' if use_cuda else 'cpu')
+# Custom Dataset Class for Testing
+class DenoisingTestDataset(Dataset):
+    def __init__(self, clean_dir, noisy_dir, transform=None):
+        self.clean_dir = clean_dir
+        self.noisy_dir = noisy_dir
+        self.transform = transform
+        self.clean_images = sorted(os.listdir(clean_dir))
+        self.noisy_images = sorted(os.listdir(noisy_dir))
 
-    if use_cuda:
-        print(f"Using CUDA (GPU {opt.cuda}) for acceleration.")
-        torch.cuda.set_device(opt.cuda)
-        torch.backends.cudnn.benchmark = True  # Optimizes for fixed-size inputs
-    else:
-        print("Using CPU for training/testing.")
+    def __len__(self):
+        return len(self.clean_images)
 
-    return device
+    def __getitem__(self, idx):
+        clean_path = os.path.join(self.clean_dir, self.clean_images[idx])
+        noisy_path = os.path.join(self.noisy_dir, self.noisy_images[idx])
 
+        clean_image = Image.open(clean_path).convert("RGB")
+        noisy_image = Image.open(noisy_path).convert("RGB")
 
-def process_video(model_plain, device):
-    """Process video frames and apply the model."""
-    video_path = './test_video2.mp4'
-    output_path = './output_video2.mp4'
+        if self.transform:
+            clean_image = self.transform(clean_image)
+            noisy_image = self.transform(noisy_image)
 
-    cap = cv.VideoCapture(video_path)
-
-    if not cap.isOpened():
-        print(f"Error: Unable to open video file {video_path}")
-        return
-
-    # Get video properties
-    frame_width, frame_height = int(cap.get(3)), int(cap.get(4))
-    fps = int(cap.get(5))
-
-    # Video writer setup
-    out = cv.VideoWriter(output_path, cv.VideoWriter_fourcc(*'mp4v'), fps, 
-                         (frame_width, frame_height), isColor=True)
-
-    print(f"Processing video: {video_path}")
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break  # End of video
-
-        # Convert frame to YCrCb and extract channels
-        frame_ycrcb = cv.cvtColor(frame, cv.COLOR_BGR2YCrCb)
-        y_channel, crcb_channel = frame_ycrcb[:, :, 0], frame_ycrcb[:, :, 1:]
-
-        # Resize and normalize Y channel
-        y_channel_resized = cv.resize(y_channel, (90, 120)).astype(np.float32)
-        y_tensor = torch.tensor(y_channel_resized).unsqueeze(0).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            result = model_plain(y_tensor).squeeze(0).cpu().numpy()
-
-        # Clip and format output
-        result = np.clip(result, 0, 255).astype(np.uint8).transpose(1, 2, 0)
-        result = cv.resize(result, (frame_width, frame_height))
-
-        # Merge processed Y with original CrCb
-        final_frame = cv.merge([result, crcb_channel])
-        final_frame = cv.cvtColor(final_frame, cv.COLOR_YCrCb2BGR)
-
-        out.write(final_frame)
-
-        if cv.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    out.release()
-    print(f"Processed video saved at {output_path}")
+        return noisy_image, clean_image, self.clean_images[idx]
 
 
-def process_images(model, device):
-    """Process individual images and save output."""
-    if not os.path.exists(opt.test_output):
-        os.makedirs(opt.test_output)
-
-    img_files = os.listdir(opt.test_input)
-
-    for img_file in img_files:
-        img_path = os.path.join(opt.test_input, img_file)
-        img = cv.imread(img_path)
-
-        if img is None:
-            print(f"Warning: Unable to read {img_file}, skipping...")
-            continue
-
-        # Convert image to YCrCb and extract channels
-        img_ycrcb = cv.cvtColor(img, cv.COLOR_BGR2YCrCb)
-        y_channel, crcb_channel = img_ycrcb[:, :, 0], img_ycrcb[:, :, 1:]
-
-        # Normalize and convert to tensor
-        y_tensor = torch.tensor(y_channel.astype(np.float32) / 255).unsqueeze(0).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            start_time = time.time()
-            result = model(y_tensor).squeeze(0).cpu().numpy()
-            print(f"Processed {img_file} in {time.time() - start_time:.4f} seconds")
-
-        # Clip and format output
-        result = np.clip(result * 255, 0, 255).astype(np.uint8).transpose(1, 2, 0)
-
-        # Merge processed Y with original CrCb
-        final_image = cv.merge([result, crcb_channel])
-        final_image = cv.cvtColor(final_image, cv.COLOR_YCrCb2BGR)
-
-        # Save output
-        output_path = os.path.join(opt.test_output, img_file)
-        cv.imwrite(output_path, final_image)
-
-    print("Image processing complete.")
+# Load the Trained Model
+def load_model(model_path, device):
+    model = MFDNet(m=4, k=3, c=48).to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()  # Set the model to evaluation mode
+    return model
 
 
+# Perform Inference and Calculate Metrics
+def test(model, test_loader, device, save_dir="results"):
+    os.makedirs(save_dir, exist_ok=True)  # Create directory to save results
+    psnr_values = []
+    ssim_values = []
+
+    with torch.no_grad():
+        for noisy_images, clean_images, image_names in test_loader:
+            noisy_images = noisy_images.to(device)
+            clean_images = clean_images.to(device)
+
+            # Perform inference
+            denoised_images = model(noisy_images)
+
+            # Convert tensors to numpy arrays for metric calculation
+            denoised_images = denoised_images.cpu().numpy()
+            clean_images = clean_images.cpu().numpy()
+
+            # Calculate PSNR and SSIM for each image in the batch
+            for i in range(denoised_images.shape[0]):
+                denoised = denoised_images[i].transpose(1, 2, 0)  # Convert from CxHxW to HxWxC
+                clean = clean_images[i].transpose(1, 2, 0)
+
+                # Clip values to [0, 1] for valid PSNR and SSIM calculation
+                denoised = np.clip(denoised, 0, 1)
+                clean = np.clip(clean, 0, 1)
+
+                # Calculate PSNR and SSIM
+                psnr_value = psnr(clean, denoised, data_range=1)
+                ssim_value = ssim(clean, denoised, data_range=1, multichannel=True)
+
+                psnr_values.append(psnr_value)
+                ssim_values.append(ssim_value)
+
+                # Save the denoised image
+                denoised_image = (denoised * 255).astype(np.uint8)
+                denoised_image = Image.fromarray(denoised_image)
+                denoised_image.save(os.path.join(save_dir, image_names[i]))
+
+    # Calculate average PSNR and SSIM
+    avg_psnr = np.mean(psnr_values)
+    avg_ssim = np.mean(ssim_values)
+
+    print(f"Average PSNR: {avg_psnr:.4f}")
+    print(f"Average SSIM: {avg_ssim:.4f}")
+
+
+# Main Testing Script
 def main():
-    device = set_device()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_path = "mfdnet_denoising.pth"  # Path to the trained model
 
-    # Load models
-    print(f"Loading model: {opt.test_model}")
-    model = MFDNet(opt.M_MFDB, opt.K_RepConv, opt.c_channel).to(device)
-    model_plain = PlainDN(opt.M_MFDB, opt.K_RepConv, opt.c_channel).to(device)
+    # Load the model
+    model = load_model(model_path, device)
 
-    try:
-        model.load_state_dict(torch.load(opt.test_model, map_location=device))
-        print("Model loaded successfully!")
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        return
+    # Dataset and DataLoader for testing
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+    ])
 
-    # Reconstruct parameters
-    model_plain = rep_params(model, model_plain, opt, device)
+    test_dataset = DenoisingTestDataset(
+        clean_dir="path/to/clean_images/test",
+        noisy_dir="path/to/noisy_images/test",
+        transform=transform,
+    )
+    test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
-    # Set models to evaluation mode
-    model.eval()
-    model_plain.eval()
-
-    # Select processing mode (video or images)
-    process_video_flag = False
-
-    if process_video_flag:
-        process_video(model_plain, device)
-    else:
-        process_images(model, device)
-
-    # Save restructured model (uncomment if needed)
-    # torch.save(model_plain.state_dict(), "./weights/mfdnet_plain/mfdnet_plain_sigma11.pt")
+    # Perform testing
+    test(model, test_loader, device, save_dir="results")
 
 
 if __name__ == "__main__":
