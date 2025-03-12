@@ -175,7 +175,12 @@ class RepConv(nn.Module):
 
             # Step 2: Fuse the result with conv1x1_2
             kernel1x1_2 = self.conv1x1_2.weight  # Shape: [out_channels, out_channels, 1, 1]
-            fused_kernel = F.conv2d(kernel1x1_2, fused_kernel_1.permute(1, 0, 2, 3))  # Shape: [out_channels, in_channels, 3, 3]
+
+            # Pad kernel1x1_2 to match the spatial size of fused_kernel_1
+            kernel1x1_2_padded = F.pad(kernel1x1_2, [1, 1, 1, 1])  # Pad to [out_channels, out_channels, 3, 3]
+
+            # Fuse the padded kernel with fused_kernel_1
+            fused_kernel = F.conv2d(fused_kernel_1, kernel1x1_2_padded.permute(1, 0, 2, 3))  # Shape: [out_channels, in_channels, 3, 3]
 
             # Fuse the batch normalization into the convolution
             bn_mean = self.bn.running_mean
@@ -221,16 +226,16 @@ class RepConv(nn.Module):
 if __name__ == "__main__":
     # Create a RepConv instance
     model = RepConv(in_channels=64, out_channels=64)
-    
+
     # Create a random input tensor
     x = torch.randn(1, 64, 32, 32)
-    
+
     # Forward pass in training mode
     print("Training output shape:", model(x).shape)  # Expected output: torch.Size([1, 64, 32, 32])
-    
+
     # Switch to inference mode
     model.switch_to_deploy()
-    
+
     # Forward pass in inference mode
     print("Inference output shape:", model(x).shape)  # Expected output: torch.Size([1, 64, 32, 32])
 ```
