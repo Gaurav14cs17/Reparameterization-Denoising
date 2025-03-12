@@ -102,6 +102,50 @@ The **weight fusion** process combines the weights of the 1x1 and 3x3 convolutio
 
 ### Training
 
+
+
+### **Requirements**
+
+1. **Dataset:**
+   - Prepare a dataset with pairs of clean and noisy images.
+   - Example folder structure:
+     ```
+     dataset/
+     ├── clean_images/
+     │   ├── train/
+     │   │   ├── clean1.png
+     │   │   ├── clean2.png
+     │   │   └── ...
+     │   └── val/
+     │       ├── clean1.png
+     │       ├── clean2.png
+     │       └── ...
+     └── noisy_images/
+         ├── train/
+         │   ├── noisy1.png
+         │   ├── noisy2.png
+         │   └── ...
+         └── val/
+             ├── noisy1.png
+             ├── noisy2.png
+             └── ...
+     ```
+
+2. **Dependencies:**
+   - Install the required libraries:
+     ```bash
+     pip install torch torchvision pillow
+     ```
+
+---
+
+#### **Training:**
+```bash
+python train.py
+```
+
+---
+
 To train the MFDNet model, use the following command:
 ```bash
 python train.py --m 4 --k 3 --c 64
