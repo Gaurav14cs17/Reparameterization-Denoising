@@ -1,135 +1,130 @@
-import os
-import time
-import argparse
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from utils.utils import jl_DatasetFromMat, cur_timestamp_str
-from model.MFDNet import MFDNet
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from PIL import Image
+import os
+import time
 
-parser = argparse.ArgumentParser(description="PyTorch MFDNet Training")
+# Custom Dataset Class
+class DenoisingDataset(Dataset):
+    def __init__(self, clean_dir, noisy_dir, transform=None):
+        self.clean_dir = clean_dir
+        self.noisy_dir = noisy_dir
+        self.transform = transform
+        self.clean_images = sorted(os.listdir(clean_dir))
+        self.noisy_images = sorted(os.listdir(noisy_dir))
 
-# Training Parameters
-parser.add_argument("--batchSize", type=int, default=40, help="Training batch size")
-parser.add_argument("--epoch", type=int, default=100000, help="Number of epochs to train for")
-parser.add_argument("--lr", type=float, default=0.0004, help="Learning Rate")
-parser.add_argument("--dataset", type=str, default="/home/jl/Project/DnCNN-unofficial/Train400", help="Path to training dataset")
-parser.add_argument("--sigma", type=int, default=8, help="Gaussian noise level")
-parser.add_argument("--pretrain", type=str, default=None, help="Path of pretrained model")
-parser.add_argument("--checkpoint", type=str, default="./weights", help="Path to save model checkpoints")
-parser.add_argument("--img_size", type=tuple, default=(360, 360), help="Training image size (Width, Height)")
-parser.add_argument("--per_epoch_save", type=int, default=1000, help="Save model every N epochs")
+    def __len__(self):
+        return len(self.clean_images)
 
-# Testing Parameters
-parser.add_argument("--test_input", type=str, default="./input_imgs", help="Test image input folder")
-parser.add_argument("--test_output", type=str, default="./output_imgs/noise11", help="Test image output folder")
-parser.add_argument("--test_model", type=str, default="./weights/mfdnet-m3k3c16-1209-1738-noise11/best_model.pt")
+    def __getitem__(self, idx):
+        clean_path = os.path.join(self.clean_dir, self.clean_images[idx])
+        noisy_path = os.path.join(self.noisy_dir, self.noisy_images[idx])
 
-# MFDNet Parameters
-parser.add_argument("--M_MFDB", type=int, default=3, help="Number of MFDB modules")
-parser.add_argument("--K_RepConv", type=int, default=3, help="Number of RepConv layers per MFDB")
-parser.add_argument("--c_channel", type=int, default=16, help="Number of channels in conv3x3 layers")
+        clean_image = Image.open(clean_path).convert("RGB")
+        noisy_image = Image.open(noisy_path).convert("RGB")
 
-# Hardware Specification
-parser.add_argument("--cuda", type=int, default=1, help="CUDA ID (-1 for CPU, 0, 1, ... for GPU)")
-parser.add_argument("--threads", type=int, default=1, help="Number of data loading threads")
+        if self.transform:
+            clean_image = self.transform(clean_image)
+            noisy_image = self.transform(noisy_image)
 
-opt = parser.parse_args()
-
-
-def set_device():
-    """Set the computing device (GPU or CPU)."""
-    use_cuda = opt.cuda >= 0 and torch.cuda.is_available()
-    device = torch.device(f"cuda:{opt.cuda}" if use_cuda else "cpu")
-
-    if use_cuda:
-        print(f"Using CUDA (GPU {opt.cuda}) for acceleration.")
-        torch.cuda.set_device(opt.cuda)
-        torch.backends.cudnn.benchmark = True  # Optimizes performance for fixed-size input
-    else:
-        print("Using CPU for training/testing.")
-
-    return device
+        return noisy_image, clean_image
 
 
-def train(model, train_dataloader, optimizer, scheduler, loss_func, device, experiment_path):
-    """Train the model with the specified parameters."""
-    best_loss = float("inf")
-    best_epoch = 0
-    total_steps = len(train_dataloader.dataset) // opt.batchSize
+# Training Function
+def train(model, train_loader, criterion, optimizer, device):
+    model.train()
+    running_loss = 0.0
 
-    for epoch in range(opt.epoch):
-        model.train()
-        epoch_loss = 0.0
-        start_time = time.time()
+    for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
+        noisy_images = noisy_images.to(device)
+        clean_images = clean_images.to(device)
 
-        for iter, (noise_img, clear_img) in enumerate(train_dataloader, 1):
-            noise_img, clear_img = noise_img.to(device), clear_img.to(device)
+        # Forward pass
+        outputs = model(noisy_images)
+        loss = criterion(outputs, clean_images)
 
-            optimizer.zero_grad()
-            out_img = model(noise_img)
-            loss = loss_func(out_img, clear_img) / (opt.batchSize * 2)
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            epoch_loss += float(loss)
+        running_loss += loss.item()
 
-        avg_loss = epoch_loss / len(train_dataloader)
-        duration = time.time() - start_time
+        if (batch_idx + 1) % 10 == 0:
+            print(f"Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}")
 
-        # Print training log
-        print(f"--------------------------------")
-        print(f"Epoch {epoch}: {total_steps} steps, Loss: {avg_loss:.4f}, LR: {scheduler.get_last_lr()[0]}, Time: {duration:.2f}s")
-
-        # Save best model
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            best_epoch = epoch
-            best_model_path = os.path.join(experiment_path, "best_model.pt")
-            torch.save(model.state_dict(), best_model_path)
-
-        print(f"Best Epoch: {best_epoch}, Best Loss: {best_loss:.4f}")
-
-        # Save model periodically
-        if (epoch + 1) % opt.per_epoch_save == 0:
-            checkpoint_path = os.path.join(experiment_path, f"model_epoch_{epoch}.pt")
-            torch.save(model.state_dict(), checkpoint_path)
+    epoch_loss = running_loss / len(train_loader)
+    print(f"Training Loss: {epoch_loss:.4f}")
+    return epoch_loss
 
 
+# Evaluation Function
+def evaluate(model, val_loader, criterion, device):
+    model.eval()
+    running_loss = 0.0
+
+    with torch.no_grad():
+        for noisy_images, clean_images in val_loader:
+            noisy_images = noisy_images.to(device)
+            clean_images = clean_images.to(device)
+
+            # Forward pass
+            outputs = model(noisy_images)
+            loss = criterion(outputs, clean_images)
+
+            running_loss += loss.item()
+
+    val_loss = running_loss / len(val_loader)
+    print(f"Validation Loss: {val_loss:.4f}")
+    return val_loss
+
+
+# Main Training Loop
 def main():
-    device = set_device()
-    torch.set_num_threads(opt.threads)
+    # Hyperparameters
+    batch_size = 8
+    learning_rate = 1e-4
+    num_epochs = 50
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load dataset and dataloader
-    train_dataset = jl_DatasetFromMat(opt.dataset, opt.sigma, opt.img_size)
-    train_dataloader = DataLoader(train_dataset, batch_size=opt.batchSize, shuffle=True,
-                                  num_workers=opt.threads, drop_last=True)
+    # Dataset and DataLoader
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+    ])
 
-    # Initialize model, optimizer, scheduler, and loss function
-    model = MFDNet(opt.M_MFDB, opt.K_RepConv, opt.c_channel).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=opt.epoch // 10, gamma=0.5)
-    loss_func = nn.MSELoss(reduction="sum")
+    train_dataset = DenoisingDataset(
+        clean_dir="path/to/clean_images/train",
+        noisy_dir="path/to/noisy_images/train",
+        transform=transform,
+    )
+    val_dataset = DenoisingDataset(
+        clean_dir="path/to/clean_images/val",
+        noisy_dir="path/to/noisy_images/val",
+        transform=transform,
+    )
 
-    # Load pretrained model if available
-    if opt.pretrain:
-        try:
-            model.load_state_dict(torch.load(opt.pretrain, map_location=device))
-            print(f"Loaded pretrained model: {opt.pretrain}")
-        except Exception as e:
-            print(f"Error loading pretrained model: {e}")
-    else:
-        print("Training the model from scratch.")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    # Create experiment folder
-    timestamp = cur_timestamp_str()
-    experiment_folder = f"mfdnet-m{opt.M_MFDB}k{opt.K_RepConv}c{opt.c_channel}-{timestamp}"
-    experiment_path = os.path.join(opt.checkpoint, experiment_folder)
-    os.makedirs(experiment_path, exist_ok=True)
+    # Model, Loss, Optimizer
+    model = MFDNet(m=4, k=3, c=48).to(device)
+    criterion = nn.MSELoss()  # Mean Squared Error Loss
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
-    # Start training
-    train(model, train_dataloader, optimizer, scheduler, loss_func, device, experiment_path)
+    # Training Loop
+    for epoch in range(num_epochs):
+        print(f"Epoch [{epoch + 1}/{num_epochs}]")
+        train_loss = train(model, train_loader, criterion, optimizer, device)
+        val_loss = evaluate(model, val_loader, criterion, device)
+        print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+    # Save the trained model
+    torch.save(model.state_dict(), "mfdnet_denoising.pth")
+    print("Training complete. Model saved.")
 
 
 if __name__ == "__main__":
