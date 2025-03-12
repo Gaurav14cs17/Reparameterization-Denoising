@@ -117,6 +117,13 @@ To perform inference on an image, use the following command:
 python inference.py --input input_image.png --output output_image.png
 ```
 
+## Mathematical Explanation
+
+
+![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/con_seq_1.png)
+![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/seq_2.png)
+![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_BN.png)
+
 
 ## Sequential Convolutional Layer
 ```
@@ -231,7 +238,6 @@ if __name__ == "__main__":
 
 
 
-## Mathematical Explanation
 
 
 ![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_rep.png)
