@@ -118,7 +118,7 @@ python inference.py --input input_image.png --output output_image.png
 ```
 
 
-
+## Sequential Convolutional Layer
 ```
 
 import torch
@@ -219,9 +219,95 @@ if __name__ == "__main__":
 
 
 
+##  Parallel Convolutional Layers
+
+```
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
+class RepConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super(RepConv, self).__init__()
+        self.training_mode = True  # Track whether in training or inference mode
 
+        # Training-time components (expand-and-squeeze topology)
+        self.conv1x1_1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False)
+        self.conv3x3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=padding, bias=False)
+        self.conv1x1_2 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        
+        # Identity mapping for residual connection
+        self.identity = nn.Identity() if in_channels == out_channels and stride == 1 else None
+
+        # Placeholder for inference-time fused convolution
+        self.rep_conv = None
+
+    def forward(self, x):
+        if self.training_mode:
+            # Training-time forward pass
+            out = self.conv1x1_1(x) + self.conv3x3(x) + self.conv1x1_2(x)
+            if self.identity is not None:
+                out += self.identity(x)
+            return self.bn(out)
+        else:
+            # Inference-time forward pass
+            return self.rep_conv(x)
+
+    def fuse(self):
+        """Merge the multi-branch convolutions into a single 3x3 kernel for inference."""
+        with torch.no_grad():
+            # Fuse the 1x1 and 3x3 kernels
+            kernel3x3 = self.conv3x3.weight.clone()
+            kernel1x1_1 = F.pad(self.conv1x1_1.weight, [1, 1, 1, 1])  # Pad 1x1 to 3x3
+            kernel1x1_2 = F.pad(self.conv1x1_2.weight, [1, 1, 1, 1])  # Pad 1x1 to 3x3
+            fused_kernel = kernel3x3 + kernel1x1_1 + kernel1x1_2
+
+            # Fuse the batch normalization into the convolution
+            bn_mean = self.bn.running_mean
+            bn_var = self.bn.running_var
+            bn_weight = self.bn.weight
+            bn_bias = self.bn.bias
+            bn_eps = self.bn.eps
+
+            # Compute the fused convolution weights and bias
+            fused_weight = fused_kernel * (bn_weight / torch.sqrt(bn_var + bn_eps)).view(-1, 1, 1, 1)
+            fused_bias = bn_bias - bn_mean * bn_weight / torch.sqrt(bn_var + bn_eps)
+
+            # Create the final inference-time convolution
+            self.rep_conv = nn.Conv2d(
+                self.conv3x3.in_channels,
+                self.conv3x3.out_channels,
+                kernel_size=3,
+                stride=self.conv3x3.stride,
+                padding=self.conv3x3.padding,
+                bias=True,
+            )
+            self.rep_conv.weight.data = fused_weight
+            self.rep_conv.bias.data = fused_bias
+
+            # Switch to inference mode
+            self.training_mode = False
+
+    def switch_to_deploy(self):
+        """Convert the model to inference mode by calling fuse."""
+        self.fuse()
+        # Remove training-time modules to save memory
+        del self.conv1x1_1, self.conv3x3, self.conv1x1_2, self.bn, self.identity
+        self.conv1x1_1, self.conv3x3, self.conv1x1_2, self.bn, self.identity = None, None, None, None, None
+
+
+# Example Usage
+if __name__ == "__main__":
+    model = RepConv(in_channels=64, out_channels=64)
+    x = torch.randn(1, 64, 32, 32)
+    print("Training output shape:", model(x).shape)
+
+    model.switch_to_deploy()
+    print("Inference output shape:", model(x).shape)
+
+```
 ---
 
 ## Implementation Details
