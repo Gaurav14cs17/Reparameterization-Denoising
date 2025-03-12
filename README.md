@@ -232,12 +232,12 @@ class RepConv(nn.Module):
         super(RepConv, self).__init__()
         self.training_mode = True  # Track whether in training or inference mode
 
-        # Training-time components (expand-and-squeeze topology)
+        # Training-time components (sequential topology)
         self.conv1x1_1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False)
-        self.conv3x3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=padding, bias=False)
-        self.conv1x1_2 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False)
+        self.conv3x3 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=padding, bias=False)
+        self.conv1x1_2 = nn.Conv2d(out_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.bn = nn.BatchNorm2d(out_channels)
-        
+
         # Identity mapping for residual connection
         self.identity = nn.Identity() if in_channels == out_channels and stride == 1 else None
 
@@ -246,23 +246,29 @@ class RepConv(nn.Module):
 
     def forward(self, x):
         if self.training_mode:
-            # Training-time forward pass
-            out = self.conv1x1_1(x) + self.conv3x3(x) + self.conv1x1_2(x)
+            # Training-time forward pass (sequential convolutions)
+            out = self.conv1x1_1(x)  # Apply 1x1 convolution
+            out = self.conv3x3(out)  # Apply 3x3 convolution
+            out = self.conv1x1_2(out)  # Apply 1x1 convolution
             if self.identity is not None:
-                out += self.identity(x)
-            return self.bn(out)
+                out += self.identity(x)  # Add residual connection if applicable
+            return self.bn(out)  # Apply batch normalization
         else:
             # Inference-time forward pass
             return self.rep_conv(x)
 
     def fuse(self):
-        """Merge the multi-branch convolutions into a single 3x3 kernel for inference."""
+        """Merge the sequential convolutions into a single 3x3 kernel for inference."""
         with torch.no_grad():
-            # Fuse the 1x1 and 3x3 kernels
-            kernel3x3 = self.conv3x3.weight.clone()
-            kernel1x1_1 = F.pad(self.conv1x1_1.weight, [1, 1, 1, 1])  # Pad 1x1 to 3x3
-            kernel1x1_2 = F.pad(self.conv1x1_2.weight, [1, 1, 1, 1])  # Pad 1x1 to 3x3
-            fused_kernel = kernel3x3 + kernel1x1_1 + kernel1x1_2
+            # Fuse the 1x1 and 3x3 kernels sequentially
+            # Step 1: Fuse conv1x1_1 and conv3x3
+            kernel1x1_1 = self.conv1x1_1.weight
+            kernel3x3 = self.conv3x3.weight
+            fused_kernel_1 = F.conv2d(kernel3x3, kernel1x1_1.permute(1, 0, 2, 3))
+
+            # Step 2: Fuse the result with conv1x1_2
+            kernel1x1_2 = self.conv1x1_2.weight
+            fused_kernel = F.conv2d(kernel1x1_2, fused_kernel_1.permute(1, 0, 2, 3))
 
             # Fuse the batch normalization into the convolution
             bn_mean = self.bn.running_mean
@@ -277,10 +283,10 @@ class RepConv(nn.Module):
 
             # Create the final inference-time convolution
             self.rep_conv = nn.Conv2d(
-                self.conv3x3.in_channels,
-                self.conv3x3.out_channels,
+                self.conv1x1_1.in_channels,
+                self.conv1x1_2.out_channels,
                 kernel_size=3,
-                stride=self.conv3x3.stride,
+                stride=self.conv1x1_1.stride,
                 padding=self.conv3x3.padding,
                 bias=True,
             )
@@ -298,14 +304,21 @@ class RepConv(nn.Module):
         self.conv1x1_1, self.conv3x3, self.conv1x1_2, self.bn, self.identity = None, None, None, None, None
 
 
-# Example Usage
 if __name__ == "__main__":
+    # Create a RepConv instance
     model = RepConv(in_channels=64, out_channels=64)
+    
+    # Create a random input tensor
     x = torch.randn(1, 64, 32, 32)
-    print("Training output shape:", model(x).shape)
-
+    
+    # Forward pass in training mode
+    print("Training output shape:", model(x).shape)  # Expected output: torch.Size([1, 64, 32, 32])
+    
+    # Switch to inference mode
     model.switch_to_deploy()
-    print("Inference output shape:", model(x).shape)
+    
+    # Forward pass in inference mode
+    print("Inference output shape:", model(x).shape)  # Expected output: torch.Size([1, 64, 32, 32])
 
 ```
 ---
