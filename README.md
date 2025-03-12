@@ -624,10 +624,11 @@ if __name__ == "__main__":
     main()
 
 ```
+------------------------------------------------
+```
 Inference time without switch_to_deploy(): 0.1234 seconds
 Inference time with switch_to_deploy(): 0.0456 seconds
 Improvement in inference time: 63.02%
-```
 ```
 
 ### Training
