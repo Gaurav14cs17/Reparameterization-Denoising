@@ -214,11 +214,11 @@ if __name__ == "__main__":
 ## Mathematical Explanation
 
 
+![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_rep.png)
+![RepConv Laye](https://github.com/Gaurav14cs17/Reparameterization-Denoising/blob/main/images/image_BN.png)
 
 
 
-
-### RepConv Layers
 
 
 
