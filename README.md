@@ -158,15 +158,16 @@ class RepConv(nn.Module):
     def fuse(self):
         """Merge the sequential convolutions into a single 3x3 kernel for inference."""
         with torch.no_grad():
-            # Fuse the 1x1 and 3x3 kernels sequentially
             # Step 1: Fuse conv1x1_1 and conv3x3
-            kernel1x1_1 = self.conv1x1_1.weight
-            kernel3x3 = self.conv3x3.weight
-            fused_kernel_1 = F.conv2d(kernel3x3, kernel1x1_1.permute(1, 0, 2, 3))
+            kernel1x1_1 = self.conv1x1_1.weight  # Shape: [out_channels, in_channels, 1, 1]
+            kernel3x3 = self.conv3x3.weight  # Shape: [out_channels, out_channels, 3, 3]
+
+            # Fuse conv1x1_1 and conv3x3
+            fused_kernel_1 = F.conv2d(kernel3x3, kernel1x1_1.permute(1, 0, 2, 3))  # Shape: [out_channels, in_channels, 3, 3]
 
             # Step 2: Fuse the result with conv1x1_2
-            kernel1x1_2 = self.conv1x1_2.weight
-            fused_kernel = F.conv2d(kernel1x1_2, fused_kernel_1.permute(1, 0, 2, 3))
+            kernel1x1_2 = self.conv1x1_2.weight  # Shape: [out_channels, out_channels, 1, 1]
+            fused_kernel = F.conv2d(kernel1x1_2, fused_kernel_1.permute(1, 0, 2, 3))  # Shape: [out_channels, in_channels, 3, 3]
 
             # Fuse the batch normalization into the convolution
             bn_mean = self.bn.running_mean
@@ -178,6 +179,13 @@ class RepConv(nn.Module):
             # Compute the fused convolution weights and bias
             fused_weight = fused_kernel * (bn_weight / torch.sqrt(bn_var + bn_eps)).view(-1, 1, 1, 1)
             fused_bias = bn_bias - bn_mean * bn_weight / torch.sqrt(bn_var + bn_eps)
+
+            # Add identity mapping for residual connection
+            if self.identity is not None:
+                identity = torch.eye(self.conv1x1_1.in_channels, device=fused_weight.device)
+                identity = identity.view(self.conv1x1_1.in_channels, self.conv1x1_1.in_channels, 1, 1)
+                identity = F.pad(identity, [1, 1, 1, 1])  # Pad identity to match kernel size
+                fused_weight = fused_weight + identity  # Add identity mapping to the fused kernel
 
             # Create the final inference-time convolution
             self.rep_conv = nn.Conv2d(
