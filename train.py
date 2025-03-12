@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from PIL import Image
+from models.MFDNet import *
 import os
 import time
 
