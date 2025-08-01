@@ -396,6 +396,90 @@ import torch.nn.functional as F
 import time
 
 
+### Method 01 : 
+
+class CustomDWT(nn.Module):
+    def __init__(self, kernel=None, use_custom=True, norm=True):
+        super().__init__()
+        if use_custom and kernel is not None:
+            kernel = torch.tensor(kernel, dtype=torch.float32)
+        else:
+            kernel = torch.tensor([
+                [1,  1,  1,  1],
+                [1, -1,  1,  1],
+                [1,  1, -1,  1],
+                [1,  1,  1, -1],
+            ], dtype=torch.float32)
+
+        kernel = kernel.view(4, 1, 2, 2)
+        if norm:
+            kernel = kernel / 2.0
+
+        self.register_buffer('weight', kernel)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = x.view(B * C, 1, H, W)
+        out = F.conv2d(x, self.weight, stride=2)
+        out = out.view(B, C, 4, H // 2, W // 2)
+        out = out.permute(0, 2, 1, 3, 4).reshape(B, 4 * C, H // 2, W // 2)
+        return out
+
+
+class CustomIDWT(nn.Module):
+    def __init__(self, kernel=None, use_custom=True, norm=True):
+        super().__init__()
+        if use_custom and kernel is not None:
+            kernel = torch.tensor(kernel, dtype=torch.float32)
+        else:
+            kernel = torch.tensor([
+                [1,  1,  1,  1],
+                [1, -1,  1,  1],
+                [1,  1, -1,  1],
+                [1,  1,  1, -1],
+            ], dtype=torch.float32)
+
+        kernel = kernel.view(4, 1, 2, 2)
+        if norm:
+            kernel = kernel / 2.0
+
+        self.register_buffer('weight', kernel)
+
+    def forward(self, x):
+        B, C4, H, W = x.shape
+        C = C4 // 4
+        x = x.view(B, 4, C, H, W).permute(0, 2, 1, 3, 4).reshape(B * C, 4, H, W)
+        out = F.conv_transpose2d(x, self.weight, stride=2)
+        return out.view(B, C, H * 2, W * 2)
+
+
+# 🔍 Sample Usage
+if __name__ == "__main__":
+    custom_kernel = [
+        [1,  1,  1,  1],
+        [1, -1,  1,  1],
+        [1,  1, -1,  1],
+        [1,  1,  1, -1],
+    ]
+
+    use_custom = True
+    normalize = True  # Set False to skip kernel normalization
+
+    dwt = CustomDWT(kernel=custom_kernel, use_custom=use_custom, norm=normalize)
+    idwt = CustomIDWT(kernel=custom_kernel, use_custom=use_custom, norm=normalize)
+
+    x = torch.randn(1, 3, 64, 64)
+
+    x_dwt = dwt(x)
+    x_rec = idwt(x_dwt)
+
+    print("Input shape:", x.shape)
+    print("DWT shape:", x_dwt.shape)
+    print("Reconstructed shape:", x_rec.shape)
+    print("Reconstruction MSE:", F.mse_loss(x, x_rec).item())
+
+### Method 02 : 
+
 def dwt_init(x):
     """Performs a 2D Haar wavelet decomposition."""
     x01, x02 = x[:, :, 0::2, :] / 2, x[:, :, 1::2, :] / 2
