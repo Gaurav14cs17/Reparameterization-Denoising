@@ -398,85 +398,70 @@ import time
 
 ### Method 01 : 
 
-class CustomDWT(nn.Module):
-    def __init__(self, kernel=None, use_custom=True, norm=True):
+
+
+class HaarDWT(nn.Module):
+    def __init__(self, in_channels):
         super().__init__()
-        if use_custom and kernel is not None:
-            kernel = torch.tensor(kernel, dtype=torch.float32)
-        else:
-            kernel = torch.tensor([
-                [1,  1,  1,  1],
-                [1, -1,  1,  1],
-                [1,  1, -1,  1],
-                [1,  1,  1, -1],
-            ], dtype=torch.float32)
-
-        kernel = kernel.view(4, 1, 2, 2)
-        if norm:
-            kernel = kernel / 2.0
-
-        self.register_buffer('weight', kernel)
+        self.in_channels = in_channels
+        haar_filters = torch.tensor([
+            [[1, 1], [1, 1]], # LL
+            [[1, -1], [1, -1]], # LH
+            [[1, 1], [-1, -1]], # HL
+            [[1, -1], [-1, 1]] # HH
+        ], dtype=torch.float32) / 2.0
+        weight = haar_filters[:, None, :, :].repeat(in_channels, 1, 1, 1)
+        self.register_buffer('weight', weight)
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        x = x.view(B * C, 1, H, W)
-        out = F.conv2d(x, self.weight, stride=2)
-        out = out.view(B, C, 4, H // 2, W // 2)
-        out = out.permute(0, 2, 1, 3, 4).reshape(B, 4 * C, H // 2, W // 2)
-        return out
+        out = F.conv2d(x, self.weight, bias=None, stride=2, groups=self.in_channels)
+        return out # shape: [B, C*4, H/2, W/2]
 
 
-class CustomIDWT(nn.Module):
-    def __init__(self, kernel=None, use_custom=True, norm=True):
+
+class HaarIDWT(nn.Module):
+    def __init__(self, in_channels):
         super().__init__()
-        if use_custom and kernel is not None:
-            kernel = torch.tensor(kernel, dtype=torch.float32)
-        else:
-            kernel = torch.tensor([
-                [1,  1,  1,  1],
-                [1, -1,  1,  1],
-                [1,  1, -1,  1],
-                [1,  1,  1, -1],
-            ], dtype=torch.float32)
-
-        kernel = kernel.view(4, 1, 2, 2)
-        if norm:
-            kernel = kernel / 2.0
-
-        self.register_buffer('weight', kernel)
+        self.in_channels = in_channels
+        inv_filters = torch.tensor([
+            [[1, 1], [1, 1]],     # LL
+            [[1, -1], [1, -1]],   # LH
+            [[1, 1], [-1, -1]],   # HL
+            [[1, -1], [-1, 1]]    # HH
+        ], dtype=torch.float32) / 2.0
+        weight = inv_filters.unsqueeze(1).repeat(in_channels, 1, 1, 1)  # [4*C, 1, 2, 2]
+        self.register_buffer('weight', weight)
 
     def forward(self, x):
         B, C4, H, W = x.shape
-        C = C4 // 4
-        x = x.view(B, 4, C, H, W).permute(0, 2, 1, 3, 4).reshape(B * C, 4, H, W)
-        out = F.conv_transpose2d(x, self.weight, stride=2)
-        return out.view(B, C, H * 2, W * 2)
+        C = self.in_channels
+        assert C4 == 4 * C, "Expected input channels to be 4 * in_channels"
+        out = F.conv_transpose2d(
+            x,
+            self.weight,
+            bias=None,
+            stride=2,
+            groups=C  # one group per original input channel
+        )
+        return out
 
 
-# 🔍 Sample Usage
+# ---------------- Test ------------------
+
+def test_reconstruction(channels=4):
+    B, C, H, W = 1, channels, 64, 64
+    x = torch.rand(B, C, H, W)
+    dwt = HaarDWT(in_channels=C)
+    idwt = HaarIDWT(in_channels=C)
+    coeffs = dwt(x)
+    recon = idwt(coeffs)
+
+    print("Max abs error:", (x - recon).abs().max())
+    assert torch.allclose(x, recon, atol=1e-5), "Reconstruction failed!"
+    print("Perfect reconstruction")
+
 if __name__ == "__main__":
-    custom_kernel = [
-        [1,  1,  1,  1],
-        [1, -1,  1,  1],
-        [1,  1, -1,  1],
-        [1,  1,  1, -1],
-    ]
-
-    use_custom = True
-    normalize = True  # Set False to skip kernel normalization
-
-    dwt = CustomDWT(kernel=custom_kernel, use_custom=use_custom, norm=normalize)
-    idwt = CustomIDWT(kernel=custom_kernel, use_custom=use_custom, norm=normalize)
-
-    x = torch.randn(1, 3, 64, 64)
-
-    x_dwt = dwt(x)
-    x_rec = idwt(x_dwt)
-
-    print("Input shape:", x.shape)
-    print("DWT shape:", x_dwt.shape)
-    print("Reconstructed shape:", x_rec.shape)
-    print("Reconstruction MSE:", F.mse_loss(x, x_rec).item())
+    test_reconstruction()
 
 ### Method 02 : 
 
